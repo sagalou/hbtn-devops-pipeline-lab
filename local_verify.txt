@@ -1,0 +1,22 @@
+Local baseline verification (docker compose, Killercoda Ubuntu playground)
+
+$ docker compose ps
+hbtn-devops-pipeline-lab-app-1   Up        0.0.0.0:3000->3000/tcp
+hbtn-devops-pipeline-lab-db-1    Up (healthy)   5432/tcp
+
+$ docker compose run --rm app npm run test:unit
+PASS tests/unit/items.unit.test.js
+PASS tests/unit/health.test.js
+Test Suites: 2 passed, 2 total
+Tests:       8 passed, 8 total
+
+$ docker compose run --rm app npm run test:integration
+PASS tests/integration/items.int.test.js
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+
+$ curl -s http://localhost:3000/health
+{"status":"ok"}
+
+$ docker compose down -v
+Containers, volume hbtn-devops-pipeline-lab_db-data and network removed
