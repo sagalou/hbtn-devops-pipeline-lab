@@ -103,3 +103,52 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to staging
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      STAGING_URL: ${{ vars.STAGING_URL }}
+
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -f -sS -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            -o deploy.json
+          echo "DEPLOY_ID=$(jq -r '.id' deploy.json)" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to go live
+        run: |
+          for attempt in $(seq 1 40); do
+            status=$(curl -f -sS "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys/${DEPLOY_ID}" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" | jq -r '.status')
+            echo "Attempt ${attempt}/40: deploy status ${status}"
+            case "$status" in
+              live) exit 0 ;;
+              *failed|canceled|deactivated) exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "Deploy did not go live in time"
+          exit 1
+
+      - name: Verify staging health and database
+        run: |
+          for attempt in $(seq 1 10); do
+            health=$(curl -s -o /dev/null -w '%{http_code}' "${STAGING_URL}/health")
+            items=$(curl -s -o /dev/null -w '%{http_code}' "${STAGING_URL}/items")
+            echo "Attempt ${attempt}/10: /health=${health} /items=${items}"
+            if [ "$health" = "200" ] && [ "$items" = "200" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Staging did not become healthy in time"
+          exit 1
