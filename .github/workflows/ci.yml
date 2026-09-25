@@ -122,7 +122,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"clearCache":"do_not_clear"}' \
             -o deploy.json
-          echo "DEPLOY_ID=$(jq -r '.id' deploy.json)" >> "$GITHUB_ENV"
+          DEPLOY_ID=$(jq -r '.id // empty' deploy.json)
+          if [ -z "$DEPLOY_ID" ]; then
+            echo "Deploy queued behind another one, tracking the latest deploy"
+            DEPLOY_ID=$(curl -f -sS "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys?limit=1" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" | jq -r '.[0].deploy.id')
+          fi
+          echo "DEPLOY_ID=${DEPLOY_ID}" >> "$GITHUB_ENV"
 
       - name: Wait for the deploy to go live
         run: |
